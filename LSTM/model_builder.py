@@ -1,12 +1,9 @@
 import tensorflow as tf
 from tensorflow.keras import Sequential, Input
 from tensorflow.keras.layers import LSTM, Dropout, Dense
-import keras.backend as K
-
 from kerastuner import HyperModel
-
 import gc
-
+import keras.backend as K 
 
 class ModelBuilder(HyperModel):
     def build(self, hp):
