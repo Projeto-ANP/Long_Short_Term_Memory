@@ -1,40 +1,70 @@
 import tensorflow as tf
-from tensorflow.keras import Sequential, Input
-from tensorflow.keras.layers import LSTM, Dropout, Dense
+from keras import Sequential, Input
+from keras.layers import LSTM, Dropout, Dense # type: ignore
 from kerastuner import HyperModel
 import gc
-import keras.backend as K 
+import keras.backend as K  # type: ignore
 
 class ModelBuilder(HyperModel):
+    def __init__(self, window):
+        """
+        Initializes the ModelBuilder object.
+
+        Args:
+        - window (int): Size of the input window for the model.
+        """
+        self.window = window
+
     def build(self, hp):
-        
-        gc.collect() 
+        """
+        Builds a deep learning model based on hyperparameter choices.
+
+        Args:
+        - hp: Hyperparameters object from Kerastuner.
+
+        Returns:
+        - model: Compiled Keras model.
+        """
+        # Garbage collection, session clearing, and graph reset for memory management
+        gc.collect()
         K.clear_session()
         tf.compat.v1.reset_default_graph()
-        
+
+        # Define hyperparameters
         params = {
-            'window': 12,
-            'val_dropout': hp.Choice('val_dropout', values=[0.02, 0.04, 0.08]),
-            'num1_lstm': hp.Choice('num1_lstm', values=[6, 12, 18, 24]),
-            'num2_lstm': hp.Choice('num2_lstm', values=[6, 12, 18, 24]),
-            'optimizer': hp.Choice('optimizer', values=['adam', 'rmsprop', 'nadam']),
-            'activation': hp.Choice('activation', values=['linear', 'relu', 'sigmoid', 'tanh', 'selu', 'elu', 'mish']),
-            'activation_dense': hp.Choice('activation_dense', values=['linear', 'relu', 'sigmoid', 'tanh', 'selu', 'elu'])
+            'window': self.window,
+            'val_dropout': hp.Choice('val_dropout', values=[0.01, 0.02, 0.08]),
+            'num1_lstm': hp.Choice('num1_lstm', values=[3, 6, 12, 24, 36, 48, 60, 72, 84, 96, 108]),
+            'num2_lstm': hp.Choice('num2_lstm', values=[3, 6, 12, 24, 36, 48, 60, 72, 84, 96, 108]),
+            'activation': hp.Choice('activation', values=['selu']),
+            'activation_dense': hp.Choice('activation_dense', values=['elu'])
         }
-        
-        strategy = tf.distribute.get_strategy() 
+
+        # Get the distribution strategy for multi-GPU training
+        strategy = tf.distribute.get_strategy()
         with strategy.scope():
             model = self.create_model(params)
-        
+
         return model
 
     def create_model(self, params):
+        """
+        Creates a Keras sequential model based on given parameters.
+
+        Args:
+        - params (dict): Dictionary containing model configuration parameters.
+
+        Returns:
+        - model: Compiled Keras model.
+        """
+        # Set memory growth for GPU devices
         physical_devices = tf.config.list_physical_devices('GPU')
         if physical_devices:
             tf.config.experimental.set_memory_growth(physical_devices[0], True)
-        
+
+        # Define the model architecture
         model = Sequential([
-            Input(shape=(params['window'], 1)), 
+            Input(shape=(params['window'], 1)),
             LSTM(params['num1_lstm'], activation=params['activation'], return_sequences=True),
             Dropout(params['val_dropout']),
             LSTM(params['num2_lstm'], activation=params['activation']),
@@ -42,10 +72,11 @@ class ModelBuilder(HyperModel):
             Dense(1, activation=params['activation_dense'])
         ])
 
-        model.compile(optimizer=params['optimizer'], loss='mse', metrics=[
-            tf.keras.metrics.MeanAbsoluteError(), 
-            tf.keras.metrics.RootMeanSquaredError(), 
+        # Compile the model with optimizer, loss, and metrics
+        model.compile(optimizer='nadam', loss='mse', metrics=[
+            tf.keras.metrics.MeanAbsoluteError(),
+            tf.keras.metrics.RootMeanSquaredError(),
             tf.keras.metrics.MeanSquaredError()
         ])
-        
+
         return model
