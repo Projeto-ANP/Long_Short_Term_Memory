@@ -6,14 +6,16 @@ import gc
 import keras.backend as K  # type: ignore
 
 class ModelBuilder(HyperModel):
-    def __init__(self, window):
+    def __init__(self, window, len_predictions):
         """
         Initializes the ModelBuilder object.
 
         Args:
         - window (int): Size of the input window for the model.
+        - len_predictions (int): number of predictions to be made.
         """
         self.window = window
+        self.len_predictions = len_predictions
 
     def build(self, hp):
         """
@@ -34,8 +36,8 @@ class ModelBuilder(HyperModel):
         params = {
             'window': self.window,
             'val_dropout': hp.Choice('val_dropout', values=[0.01, 0.02, 0.08]),
-            'num1_lstm': hp.Choice('num1_lstm', values=[3, 6, 12, 24, 36, 48, 60, 72, 84, 96, 108]),
-            'num2_lstm': hp.Choice('num2_lstm', values=[3, 6, 12, 24, 36, 48, 60, 72, 84, 96, 108]),
+            'num1_lstm': hp.Choice('num1_lstm', values=[60, 72, 84, 96, 108]),
+            'num2_lstm': hp.Choice('num2_lstm', values=[60, 72, 84, 96, 108]),
             'activation': hp.Choice('activation', values=['selu']),
             'activation_dense': hp.Choice('activation_dense', values=['elu'])
         }
@@ -69,7 +71,7 @@ class ModelBuilder(HyperModel):
             Dropout(params['val_dropout']),
             LSTM(params['num2_lstm'], activation=params['activation']),
             Dropout(params['val_dropout']),
-            Dense(1, activation=params['activation_dense'])
+            Dense(self.len_predictions, activation=params['activation_dense'])
         ])
 
         # Compile the model with optimizer, loss, and metrics

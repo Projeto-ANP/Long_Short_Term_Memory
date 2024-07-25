@@ -26,7 +26,10 @@ from warnings import simplefilter
 
 from model_builder import ModelBuilder
 from metrics_lstm import rmse, pbe, pocid, mase
-from preprocessing_data import rolling_window, train_test_split_window, recursive_multistep_forecasting, convert_date # type: ignore
+from sklearn.metrics import mean_squared_error as mse
+
+from preprocessing_data import rolling_window, train_test_split_window, convert_date # type: ignore
+from functions_forecasting import recursive_multistep_forecasting, targeted_forecasting
 
 print(tf.config.list_physical_devices('GPU'))
 
@@ -42,7 +45,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_CUDNN_DETERMINISTIC'] = 'true'
 os.environ['TF_DETERMINISTIC_OPS'] = 'true'
 
-def rescaled_predicted_values(horizon, data, predictions, scaler, sub_dir=None, show_plot=None):
+def rescaled_predicted_values(horizon, data, predictions, scaler, type_predictions='recursive', sub_dir=None, show_plot=None):
     """
     Rescale the predicted values back to the original scale and calculate evaluation metrics.
 
@@ -51,6 +54,7 @@ def rescaled_predicted_values(horizon, data, predictions, scaler, sub_dir=None, 
     - data: DataFrame, containing the time series data used for normalization.
     - scaler: Scaler object, scaler used for normalization.
     - predictions: array-like, containing the normalized predicted values.
+    - type_predictions (str, optional): Type of predictions method. Can be 'recursive' or 'direct'. Default is 'recursive'.
     - sub_dir: str or None, subdirectory to save plots (optional).
     - show_plot: bool or None, whether to display a plot of the forecasted values (optional).
 
@@ -79,7 +83,6 @@ def rescaled_predicted_values(horizon, data, predictions, scaler, sub_dir=None, 
     pocid_result_rescaled = 100 * np.sum((predictions_rescaled[1:] - predictions_rescaled[:-1]) * (y_test_rescaled[1:] - y_test_rescaled[:-1]) > 0) / (len(y_test_rescaled) - 1)
     y_baseline = data["m3"][-horizon*2:-horizon].values
     mase_result_rescaled = np.mean(np.abs(y_test_rescaled - predictions_rescaled)) / np.mean(np.abs(y_test_rescaled - y_baseline))
-    mae_rescaled = np.mean(np.abs(y_test_rescaled - predictions_rescaled))
 
     # Optionally, plot the rescaled predictions
     if show_plot:
@@ -97,12 +100,12 @@ def rescaled_predicted_values(horizon, data, predictions, scaler, sub_dir=None, 
         if sub_dir:
             if not os.path.exists(sub_dir):
                 os.makedirs(sub_dir)
-            plt.savefig(os.path.join(sub_dir, 'rescaled_predictions.png'))
+            plt.savefig(os.path.join(sub_dir, f'rescaled_predictions_{type_predictions}.png'))
         plt.close()
 
-    return rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled, mae_rescaled
+    return rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
 
-def create_lstm_model(horizon, window, data, epochs, state, product, rescaling=None, show_plot=None, verbose=2, return_model=None):
+def create_lstm_model(horizon, window, data, epochs, state, product, type_predictions='recursive', rescaling=None, show_plot=None, verbose=2, return_model=None):
     """
     Run LSTM model for time series forecasting.
 
@@ -113,6 +116,7 @@ def create_lstm_model(horizon, window, data, epochs, state, product, rescaling=N
     - epochs (int): Number of epochs for training the LSTM model.
     - state: The specific state for the model (description needed based on context).
     - product: The specific product for the model (description needed based on context).
+    - type_predictions (str, optional): Type of predictions method. Can be 'recursive' or 'direct'. Default is 'recursive'.
     - rescaling (bool or None, optional): Whether to rescale the predicted values to the original scale. Default is None.
     - show_plot (bool or None, optional): Whether to display a plot of the forecasted values. Default is None.
     - verbose (int, optional): Controls the verbosity of the training process. 0 = silent, 1 = progress bar, 2 = one line per epoch. Default is 2.
@@ -131,100 +135,291 @@ def create_lstm_model(horizon, window, data, epochs, state, product, rescaling=N
     - pocid_rescaled (float): Rescaled Percentage of Correct Indication Direction.
     - mase_rescaled (float): Rescaled Mean Absolute Scaled Error.
     """
-    
-    # Generating the attribute-value table (normalized)
-    data_normalized, scaler = rolling_window(data["m3"], window)
 
-    # Splitting the data into train/test considering a prediction horizon of 12 months
-    X_train, X_test, y_train, y_test = train_test_split_window(data_normalized, horizon)
+    if type_predictions == 'recursive':
 
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=42, shuffle=False)
-    
-    # Define Early Stopping
-    early_stopping = tf.keras.callbacks.EarlyStopping(monitor='root_mean_squared_error', patience=10, mode='min', verbose=verbose)
-    
-    tuner = BayesianOptimization(
-        hypermodel=ModelBuilder(window=window),
-        objective=Objective('root_mean_squared_error', direction='min'),
-        num_initial_points=5,
-        max_trials=30,
-        alpha=0.0001,
-        beta=2.6,
-        seed=42,
-        max_retries_per_trial=1,
-        max_consecutive_failed_trials=3,
-        directory=f'tuner_v2_window_{window}',
-        project_name=f'lstm_{state}_{product}'
-    )
-    
-    tuner.search(X_train, y_train, epochs=epochs, 
-                 validation_data=(X_val, y_val), 
-                 batch_size=32,
-                 verbose=verbose, callbacks=[early_stopping])
+        # Generating the attribute-value table (normalized)
+        data_normalized, scaler = rolling_window(data["m3"], window)
+
+        # Splitting the data into train/test considering a prediction horizon of 12 months
+        X_train, X_test, y_train, y_test = train_test_split_window(data_normalized, horizon)
+
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=42, shuffle=False)
         
-    # Get the best model
-    best_model = tuner.get_best_models()[0]
-    best_hyperparameters = tuner.get_best_hyperparameters()[0].values
-
-    gc.collect() 
-    K.clear_session()
-    tf.compat.v1.reset_default_graph()
-    del tuner
-    
-    # Predicting
-    predictions = recursive_multistep_forecasting(X_test, best_model, horizon)    
-
-    # Calculating evaluation metrics
-    rmse_result = rmse(y_test.values, predictions)
-    mape_result = mape(y_test.values, predictions)
-    pbe_result = pbe(y_test.values, predictions)
-    pocid_result = pocid(y_test.values, predictions)
-    
-    sub_dir = None
-
-    if show_plot:
-        plots_dir = "plots_graphs"
-        if not os.path.exists(plots_dir):
-            os.makedirs(plots_dir)
+        # Define Early Stopping
+        early_stopping = tf.keras.callbacks.EarlyStopping(monitor='root_mean_squared_error', patience=8, mode='min', verbose=verbose)
         
-        sub_dir = os.path.join(plots_dir, f"plot_{state}_{product}")
-        if not os.path.exists(sub_dir):
-            os.makedirs(sub_dir)
-
-        plt.figure(figsize=(12, 3))
-        plt.title('Normalized Predictions')
-        plt.plot(y_test.values, label='Actual')
-        plt.plot(predictions, linewidth=5, alpha=0.4, label='Predicted')
-        plt.scatter(range(len(y_test)), y_test.values, color='blue')
-        plt.scatter(range(len(predictions)), predictions, color='red')
-        plt.legend()
-        plt.savefig(os.path.join(sub_dir, 'normalized_predictions.png'))
-        plt.close()
-
-        plt.figure(figsize=(8,8))
-        plt.scatter(y_test.values, predictions, alpha=0.4)
-        plt.axline((0, 0), slope=1, linestyle='dotted', color='gray')
-        plt.xlabel('Actual values')
-        plt.ylabel('Predicted values')
-        plt.xlim([-2, 2])
-        plt.ylim([-2, 2])
-        plt.savefig(os.path.join(sub_dir, 'actual_vs_predicted.png'))
-        plt.close()
+        tuner = BayesianOptimization(
+            hypermodel=ModelBuilder(window=window, len_predictions=1),
+            objective=Objective('root_mean_squared_error', direction='min'),
+            num_initial_points=5,
+            max_trials=50,
+            alpha=0.0001,
+            beta=2.6,
+            seed=42,
+            max_retries_per_trial=1,
+            max_consecutive_failed_trials=3,
+            directory=f'tuner_v3_window_{window}',
+            project_name=f'lstm_{state}_{product}'
+        )
         
-    if rescaling:
-        if return_model:
-            rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, sub_dir=sub_dir, show_plot=show_plot)
-            return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+        tuner.search(X_train, y_train, epochs=epochs, 
+                    validation_data=(X_val, y_val), 
+                    batch_size=32,
+                    verbose=verbose, callbacks=[early_stopping])
+            
+        # Get the best model
+        best_model = tuner.get_best_models()[0]
+        best_hyperparameters = tuner.get_best_hyperparameters()[0].values
+
+        gc.collect() 
+        K.clear_session()
+        tf.compat.v1.reset_default_graph()
+        del tuner
+        
+        # Predicting
+        predictions = recursive_multistep_forecasting(X_test, best_model, horizon)    
+
+        # Calculating evaluation metrics
+        rmse_result = rmse(y_test.values, predictions)
+        mape_result = mape(y_test.values, predictions)
+        pbe_result = pbe(y_test.values, predictions)
+        pocid_result = pocid(y_test.values, predictions)
+        
+        sub_dir = None
+
+        if show_plot:
+            plots_dir = "plots_graphs\\recursive"
+            if not os.path.exists(plots_dir):
+                os.makedirs(plots_dir)
+            
+            sub_dir = os.path.join(plots_dir, f"plot_{state}_{product}_{window}_{type_predictions}")
+            if not os.path.exists(sub_dir):
+                os.makedirs(sub_dir)
+
+            plt.figure(figsize=(12, 3))
+            plt.title('Normalized Predictions')
+            plt.plot(y_test.values, label='Actual')
+            plt.plot(predictions, linewidth=5, alpha=0.4, label='Predicted')
+            plt.scatter(range(len(y_test)), y_test.values, color='blue')
+            plt.scatter(range(len(predictions)), predictions, color='red')
+            plt.legend()
+            plt.savefig(os.path.join(sub_dir, f'normalized_predictions_{type_predictions}.png'))
+            plt.close()
+
+            plt.figure(figsize=(8,8))
+            plt.scatter(y_test.values, predictions, alpha=0.4)
+            plt.axline((0, 0), slope=1, linestyle='dotted', color='gray')
+            plt.xlabel('Actual values')
+            plt.ylabel('Predicted values')
+            plt.xlim([-2, 2])
+            plt.ylim([-2, 2])
+            plt.savefig(os.path.join(sub_dir, f'actual_vs_predicted_{type_predictions}.png'))
+            plt.close()
+            
+        if rescaling:
+            if return_model:
+                rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+            else:
+                rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
+            return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
         else:
-            rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, sub_dir=sub_dir, show_plot=show_plot)
-        return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
-    else:
-        if return_model:
-            return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters
-        else:
-            return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters    
+            if return_model:
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters
+            else:
+                return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters 
+            
+    elif type_predictions == 'direct_dense1':
 
-def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, save_model, bool_save):
+        # Generating the attribute-value table (normalized)
+        data_normalized, scaler = rolling_window(data["m3"], window)
+
+        # Splitting the data into train/test considering a prediction horizon of 12 months
+        X_train, X_test, y_train, y_test = train_test_split_window(data_normalized, horizon)
+
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=42, shuffle=False)
+        
+        # Define Early Stopping
+        early_stopping = tf.keras.callbacks.EarlyStopping(monitor='root_mean_squared_error', patience=8, mode='min', verbose=verbose)
+        
+        tuner = BayesianOptimization(
+            hypermodel=ModelBuilder(window=window, len_predictions=1),
+            objective=Objective('root_mean_squared_error', direction='min'),
+            num_initial_points=5,
+            max_trials=50,
+            alpha=0.0001,
+            beta=2.6,
+            seed=42,
+            max_retries_per_trial=1,
+            max_consecutive_failed_trials=3,
+            directory=f'test_lstm_{window}',
+            project_name=f'lstm_{state}_{product}'
+        )
+        
+        tuner.search(X_train, y_train, epochs=epochs, 
+                    validation_data=(X_val, y_val), 
+                    batch_size=32,
+                    verbose=verbose, callbacks=[early_stopping])
+            
+        # Get the best model
+        best_model = tuner.get_best_models()[0]
+        best_hyperparameters = tuner.get_best_hyperparameters()[0].values
+
+        gc.collect() 
+        K.clear_session()
+        tf.compat.v1.reset_default_graph()
+        del tuner
+        
+        # Predicting
+        predictions = best_model.predict(X_test)
+
+        # Calculating evaluation metrics
+        rmse_result = rmse(y_test.values, predictions)
+        mape_result = mape(y_test.values, predictions)
+        pbe_result = pbe(y_test.values, predictions)
+        pocid_result = pocid(y_test.values, predictions)
+        
+        sub_dir = None
+
+        if show_plot:
+            plots_dir = "plots_graphs\\test_lstm_"
+            if not os.path.exists(plots_dir):
+                os.makedirs(plots_dir)
+            
+            sub_dir = os.path.join(plots_dir, f"plot_{state}_{product}_{window}_{type_predictions}")
+            if not os.path.exists(sub_dir):
+                os.makedirs(sub_dir)
+
+            plt.figure(figsize=(12, 3))
+            plt.title('Normalized Predictions')
+            plt.plot(y_test.values, label='Actual')
+            plt.plot(predictions, linewidth=5, alpha=0.4, label='Predicted')
+            plt.scatter(range(len(y_test)), y_test.values, color='blue')
+            plt.scatter(range(len(predictions)), predictions, color='red')
+            plt.legend()
+            plt.savefig(os.path.join(sub_dir, f'normalized_predictions_{type_predictions}.png'))
+            plt.close()
+
+            plt.figure(figsize=(8,8))
+            plt.scatter(y_test.values, predictions, alpha=0.4)
+            plt.axline((0, 0), slope=1, linestyle='dotted', color='gray')
+            plt.xlabel('Actual values')
+            plt.ylabel('Predicted values')
+            plt.xlim([-2, 2])
+            plt.ylim([-2, 2])
+            plt.savefig(os.path.join(sub_dir, f'actual_vs_predicted_{type_predictions}.png'))
+            plt.close()
+            
+        if rescaling:
+            if return_model:
+                rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+            else:
+                rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
+            return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+        else:
+            if return_model:
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters
+            else:
+                return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters 
+               
+    elif type_predictions == 'direct_dense12':
+
+        # Generating the attribute-value table (normalized)
+        data_normalized, scaler = rolling_window(data["m3"], window)
+
+        # Splitting the data into train/test considering a prediction horizon of 12 months
+        X_train, X_test, y_train, y_test = train_test_split_window(data_normalized, horizon)
+
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=42, shuffle=False)
+        
+        # Define Early Stopping
+        early_stopping = tf.keras.callbacks.EarlyStopping(monitor='root_mean_squared_error', patience=8, mode='min', verbose=verbose)
+        
+        tuner = BayesianOptimization(
+            hypermodel=ModelBuilder(window=window, len_predictions=12),
+            objective=Objective('root_mean_squared_error', direction='min'),
+            num_initial_points=5,
+            max_trials=50,
+            alpha=0.0001,
+            beta=2.6,
+            seed=42,
+            max_retries_per_trial=1,
+            max_consecutive_failed_trials=3,
+            directory=f'tuner_v5_window_{window}',
+            project_name=f'lstm_{state}_{product}'
+        )
+        
+        tuner.search(X_train, y_train, epochs=epochs, 
+                    validation_data=(X_val, y_val), 
+                    batch_size=32,
+                    verbose=verbose, callbacks=[early_stopping])
+            
+        # Get the best model
+        best_model = tuner.get_best_models()[0]
+        best_hyperparameters = tuner.get_best_hyperparameters()[0].values
+
+        gc.collect() 
+        K.clear_session()
+        tf.compat.v1.reset_default_graph()
+        del tuner
+        
+        # Predicting
+        predictions = best_model.predict(X_test)
+        predictions = [predictions_list[0] for predictions_list in predictions]
+
+        # Calculating evaluation metrics
+        rmse_result = rmse(y_test.values, predictions)
+        mape_result = mape(y_test.values, predictions)
+        pbe_result = pbe(y_test.values, predictions)
+        pocid_result = pocid(y_test.values, predictions)
+        
+        sub_dir = None
+
+        if show_plot:
+            plots_dir = "plots_graphs\\direct_dense12"
+            if not os.path.exists(plots_dir):
+                os.makedirs(plots_dir)
+            
+            sub_dir = os.path.join(plots_dir, f"plot_{state}_{product}_{window}_{type_predictions}")
+            if not os.path.exists(sub_dir):
+                os.makedirs(sub_dir)
+
+            plt.figure(figsize=(12, 3))
+            plt.title('Normalized Predictions')
+            plt.plot(y_test.values, label='Actual')
+            plt.plot(predictions, linewidth=5, alpha=0.4, label='Predicted')
+            plt.scatter(range(len(y_test)), y_test.values, color='blue')
+            plt.scatter(range(len(predictions)), predictions, color='red')
+            plt.legend()
+            plt.savefig(os.path.join(sub_dir, f'normalized_predictions_{type_predictions}.png'))
+            plt.close()
+
+            plt.figure(figsize=(8,8))
+            plt.scatter(y_test.values, predictions, alpha=0.4)
+            plt.axline((0, 0), slope=1, linestyle='dotted', color='gray')
+            plt.xlabel('Actual values')
+            plt.ylabel('Predicted values')
+            plt.xlim([-2, 2])
+            plt.ylim([-2, 2])
+            plt.savefig(os.path.join(sub_dir, f'actual_vs_predicted_{type_predictions}.png'))
+            plt.close()
+            
+        if rescaling:
+            if return_model:
+                rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+            else:
+                rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
+            return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+        else:
+            if return_model:
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters
+            else:
+                return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters 
+            
+def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, bool_save, save_model, type_predictions='recursive'):
     """
     Run LSTM model training and save results to an Excel file.
 
@@ -236,8 +431,9 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, sa
         - data_filtered (pd.DataFrame): Filtered data specific to the state and product.
         - epochs (int): Number of epochs for training the LSTM model.
         - verbose (int): Controls the verbosity of the training process. 0 = silent, 1 = progress bar, 2 = one line per epoch.
-        - save_model (bool): Flag indicating whether to save the trained model.
         - bool_save (bool): Flag indicating whether to save results to an Excel file.
+        - save_model (bool): Flag indicating whether to save the trained model.
+        - type_predictions (str, optional): Type of predictions method. Can be 'recursive' or 'direct'. Default is 'recursive'.
 
     Returns:
         None
@@ -253,7 +449,7 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, sa
     try:
         # Run LSTM model training
         model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = \
-        create_lstm_model(horizon=horizon, window=window, data=data_filtered, epochs=epochs, state=state, product=product, rescaling=True, show_plot=False, verbose=verbose, return_model=True)
+        create_lstm_model(horizon=horizon, window=window, data=data_filtered, epochs=epochs, state=state, product=product, type_predictions=type_predictions, rescaling=True, show_plot=True, verbose=verbose, return_model=True)
 
         # Save trained model if specified
         if save_model:
@@ -323,7 +519,7 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, sa
             
     # Save results to an Excel file if specified
     if bool_save:
-        directory = f'result_v2_{window}'
+        directory = f'result_v4_{window}'
         if not os.path.exists(directory):
             os.makedirs(directory)
 
@@ -336,7 +532,7 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, sa
         combined_df = pd.concat([existing_df, results_df], ignore_index=True)
         combined_df.to_excel(file_path, index=False)
 
-def run_lstm_in_thread(horizon, window, epochs, verbose, bool_save, save_model=None):
+def run_lstm_in_thread(horizon, window, epochs, verbose, bool_save, save_model=None, type_predictions='recursive'):
     """
     Loop through LSTM model with different configurations for each state and product combination.
 
@@ -347,6 +543,7 @@ def run_lstm_in_thread(horizon, window, epochs, verbose, bool_save, save_model=N
         - verbose (int): Controls the verbosity of the training process. 0 = silent, 1 = progress bar, 2 = one line per epoch.
         - bool_save (bool): Flag indicating whether to save the trained models.
         - save_model (bool or None, optional): Save models.
+        - type_predictions (str, optional): Type of predictions method. Can be 'recursive' or 'direct'. Default is 'recursive'.
 
     Returns:
         None
@@ -388,7 +585,7 @@ def run_lstm_in_thread(horizon, window, epochs, verbose, bool_save, save_model=N
             data_filtered = all_data[(all_data['state'] == state) & (all_data['product'] == product)]
 
             # Create a separate process (thread) to run LSTM model
-            thread = multiprocessing.Process(target=run_lstm, args=(state, product, horizon, window, data_filtered, epochs, verbose, save_model, bool_save))
+            thread = multiprocessing.Process(target=run_lstm, args=(state, product, horizon, window, data_filtered, epochs, verbose, bool_save, save_model, type_predictions))
             thread.start()
             thread.join()  # Wait for the thread to finish execution
     
@@ -430,7 +627,7 @@ def product_and_single_thread_testing():
 
     # Running the LSTM model
     rmse_result, mape_result, pbe_result, pocid_result, best_param, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = \
-    create_lstm_model(horizon=12, window=12, data=data_filtered_test, epochs=200, state="pr", product="glp", rescaling=True, show_plot=True, verbose=1)
+    create_lstm_model(horizon=12, window=12, data=data_filtered_test, epochs=200, state="pr", product="glp", type_predictions='direct_dense1', rescaling=True, show_plot=True, verbose=1)
 
     # Recording end time and calculating execution duration
     end_time = time.time()
