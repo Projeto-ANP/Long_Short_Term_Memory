@@ -1,4 +1,6 @@
 database/venda_process/anual/*
+Features/01-ALLFEAT_concatenated/contanet.py
+Features/00-features_salvas/CODE-ExtractFEATURES/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -41,7 +41,10 @@ def pocid(y_true, y_pred):
     n = len(y_true)
     D = [1 if (y_pred[i] - y_pred[i-1]) * (y_true[i] - y_true[i-1]) > 0 else 0 for i in range(1, n)]
     POCID = 100 * np.sum(D) / (n-1)
+
     return POCID
+
+ 
 
 def mase(y_true, y_pred, y_baseline):
     """

@@ -134,6 +134,9 @@ def create_lstm_model(horizon, window, data, epochs, state, product, type_predic
     - pbe_rescaled (float): Rescaled Prediction Bias Error.
     - pocid_rescaled (float): Rescaled Percentage of Correct Indication Direction.
     - mase_rescaled (float): Rescaled Mean Absolute Scaled Error.
+    
+
+    - predictions - points from the predictions made.
     """
 
     if type_predictions == 'recursive':
@@ -159,7 +162,7 @@ def create_lstm_model(horizon, window, data, epochs, state, product, type_predic
             seed=42,
             max_retries_per_trial=1,
             max_consecutive_failed_trials=3,
-            directory=f'tuner_v3_window_{window}',
+            directory=f'models_{type_predictions}_{window}',
             project_name=f'lstm_{state}_{product}'
         )
         
@@ -220,15 +223,15 @@ def create_lstm_model(horizon, window, data, epochs, state, product, type_predic
         if rescaling:
             if return_model:
                 rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
-                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled, predictions
             else:
                 rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
-            return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+            return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled, predictions
         else:
             if return_model:
-                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, predictions
             else:
-                return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters 
+                return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, predictions
             
     elif type_predictions == 'direct_dense1':
 
@@ -247,13 +250,13 @@ def create_lstm_model(horizon, window, data, epochs, state, product, type_predic
             hypermodel=ModelBuilder(window=window, len_predictions=1),
             objective=Objective('root_mean_squared_error', direction='min'),
             num_initial_points=5,
-            max_trials=50,
+            max_trials=10,
             alpha=0.0001,
             beta=2.6,
             seed=42,
             max_retries_per_trial=1,
             max_consecutive_failed_trials=3,
-            directory=f'test_lstm_{window}',
+            directory=f'models4_{type_predictions}_{window}',
             project_name=f'lstm_{state}_{product}'
         )
         
@@ -283,7 +286,7 @@ def create_lstm_model(horizon, window, data, epochs, state, product, type_predic
         sub_dir = None
 
         if show_plot:
-            plots_dir = "plots_graphs\\test_lstm_"
+            plots_dir = "plots_graphs\\test_lstm_4"
             if not os.path.exists(plots_dir):
                 os.makedirs(plots_dir)
             
@@ -314,15 +317,15 @@ def create_lstm_model(horizon, window, data, epochs, state, product, type_predic
         if rescaling:
             if return_model:
                 rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
-                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled, predictions
             else:
                 rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
-            return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+            return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled, predictions
         else:
             if return_model:
-                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, predictions
             else:
-                return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters 
+                return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, predictions
                
     elif type_predictions == 'direct_dense12':
 
@@ -347,7 +350,7 @@ def create_lstm_model(horizon, window, data, epochs, state, product, type_predic
             seed=42,
             max_retries_per_trial=1,
             max_consecutive_failed_trials=3,
-            directory=f'tuner_v5_window_{window}',
+            directory=f'models_{type_predictions}_{window}',
             project_name=f'lstm_{state}_{product}'
         )
         
@@ -409,17 +412,17 @@ def create_lstm_model(horizon, window, data, epochs, state, product, type_predic
         if rescaling:
             if return_model:
                 rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
-                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled, predictions
             else:
                 rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = rescaled_predicted_values(horizon=horizon, data=data, predictions=predictions, scaler=scaler, type_predictions=type_predictions, sub_dir=sub_dir, show_plot=show_plot)
-            return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled
+            return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled, predictions
         else:
             if return_model:
-                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters
+                return best_model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, predictions
             else:
-                return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters 
+                return rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, predictions
             
-def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, bool_save, save_model, type_predictions='recursive'):
+def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, bool_save, save_model, log_lock, type_predictions='recursive'):
     """
     Run LSTM model training and save results to an Excel file.
 
@@ -446,10 +449,15 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, bo
     os.environ['PYTHONHASHSEED'] = str(42)
     tf.keras.utils.set_random_seed(42)
 
+    # Record the start time of execution
+    start_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\nExecution started at: {start_timestamp}")
+    start_time = time.time()
+
     try:
         # Run LSTM model training
-        model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = \
-        create_lstm_model(horizon=horizon, window=window, data=data_filtered, epochs=epochs, state=state, product=product, type_predictions=type_predictions, rescaling=True, show_plot=True, verbose=verbose, return_model=True)
+        model, rmse_result, mape_result, pbe_result, pocid_result, best_hyperparameters, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled, predictions = \
+        create_lstm_model(horizon=horizon, window=window, epochs=epochs, data=data_filtered, state=state, product=product, type_predictions=type_predictions, rescaling=True, show_plot=True, verbose=verbose, return_model=True)
 
         # Save trained model if specified
         if save_model:
@@ -470,7 +478,7 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, bo
         # Prepare results into a DataFrame
         results_df = pd.DataFrame([{'HORIZON': horizon,
                                     'WINDOW': window,
-                                    'EPOCHS': epochs,
+                                    'TYPE_PREDICTIONS': type_predictions,
                                     'BEST_PARAM': str(best_hyperparameters),
                                     'VAL_DROPOUT': best_hyperparameters['val_dropout'],
                                     'NUM1_LSTM': best_hyperparameters['num1_lstm'],
@@ -484,6 +492,7 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, bo
                                     'MAPE': mape_result,
                                     'PBE': pbe_result,
                                     'POCID': pocid_result,
+                                    'PREDICTIONS': predictions,
                                     'RMSE_RESCALED': rmse_result_rescaled,
                                     'MAPE_RESCALED': mape_result_rescaled,
                                     'PBE_RESCALED': pbe_result_rescaled,
@@ -496,7 +505,7 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, bo
         
         results_df = pd.DataFrame([{'HORIZON': np.nan,
                                     'WINDOW': np.nan,
-                                    'EPOCHS': np.nan,
+                                    'TYPE_PREDICTIONS': type_predictions,
                                     'BEST_PARAM': np.nan,
                                     'VAL_DROPOUT': np.nan,
                                     'NUM1_LSTM': np.nan,
@@ -510,6 +519,7 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, bo
                                     'MAPE': np.nan,
                                     'PBE': np.nan,
                                     'POCID': np.nan,
+                                    'PREDICTIONS': predictions,
                                     'RMSE_RESCALED': np.nan,
                                     'MAPE_RESCALED': np.nan,
                                     'PBE_RESCALED': np.nan,
@@ -519,7 +529,7 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, bo
             
     # Save results to an Excel file if specified
     if bool_save:
-        directory = f'result_v4_{window}'
+        directory = f'result_{window}'
         if not os.path.exists(directory):
             os.makedirs(directory)
 
@@ -531,6 +541,20 @@ def run_lstm(state, product, horizon, window, data_filtered, epochs, verbose, bo
 
         combined_df = pd.concat([existing_df, results_df], ignore_index=True)
         combined_df.to_excel(file_path, index=False)
+
+    # Calculate and print the execution time
+    end_time = time.time()
+    execution_time = end_time - start_time
+    print(f"Function execution time: {execution_time:.2f} seconds")
+    print(f"Execution ended at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # Log the details to a file
+    log_entry = f"{time.strftime('%Y-%m-%d %H:%M:%S')}, {state}, {product}, {horizon}, {window}, {type_predictions}, {execution_time:.2f}\n"
+    
+    # Acquire the lock before writing to the log file
+    with log_lock:
+        with open("training_log.csv", "a") as log_file:
+            log_file.write(log_entry)
 
 def run_lstm_in_thread(horizon, window, epochs, verbose, bool_save, save_model=None, type_predictions='recursive'):
     """
@@ -551,6 +575,9 @@ def run_lstm_in_thread(horizon, window, epochs, verbose, bool_save, save_model=N
     
     multiprocessing.set_start_method("spawn")
 
+    # Create a lock object
+    log_lock = multiprocessing.Lock()
+
     # Load the combined dataset
     all_data = pd.read_csv('../database/combined_data.csv', sep=";")
 
@@ -568,12 +595,7 @@ def run_lstm_in_thread(horizon, window, epochs, verbose, bool_save, save_model=N
     for state, products in state_product_dict.items():
         for product in products:
             print(f"========== State: {state}, product: {product} ==========")
-
-            # Record the start time of execution
-            start_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            print(f"\nExecution started at: {start_timestamp}")
-            start_time = time.time()
-
+           
             # Set random seeds for reproducibility
             random.seed(42)
             np.random.seed(42)
@@ -585,15 +607,9 @@ def run_lstm_in_thread(horizon, window, epochs, verbose, bool_save, save_model=N
             data_filtered = all_data[(all_data['state'] == state) & (all_data['product'] == product)]
 
             # Create a separate process (thread) to run LSTM model
-            thread = multiprocessing.Process(target=run_lstm, args=(state, product, horizon, window, data_filtered, epochs, verbose, bool_save, save_model, type_predictions))
+            thread = multiprocessing.Process(target=run_lstm, args=(state, product, horizon, window, data_filtered, epochs, verbose, bool_save, save_model, log_lock, type_predictions))
             thread.start()
             thread.join()  # Wait for the thread to finish execution
-    
-            # Calculate and print the execution time
-            end_time = time.time()
-            execution_time = end_time - start_time
-            print(f"Function execution time: {execution_time:.2f} seconds")
-            print(f"Execution ended at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 def product_and_single_thread_testing():    
     """
@@ -626,7 +642,7 @@ def product_and_single_thread_testing():
     start_time = time.time()
 
     # Running the LSTM model
-    rmse_result, mape_result, pbe_result, pocid_result, best_param, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled = \
+    rmse_result, mape_result, pbe_result, pocid_result, best_param, rmse_result_rescaled, mape_result_rescaled, pbe_result_rescaled, pocid_result_rescaled, mase_result_rescaled, predictions = \
     create_lstm_model(horizon=12, window=12, data=data_filtered_test, epochs=200, state="pr", product="glp", type_predictions='direct_dense1', rescaling=True, show_plot=True, verbose=1)
 
     # Recording end time and calculating execution duration
@@ -653,3 +669,5 @@ def product_and_single_thread_testing():
 
     # Displaying the best parameters found during model tuning
     print("\nBest parameters found: ", best_param)
+
+    print("\nPontos de previstos:\n", predictions)

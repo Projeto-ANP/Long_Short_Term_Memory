@@ -35,9 +35,9 @@ class ModelBuilder(HyperModel):
         # Define hyperparameters
         params = {
             'window': self.window,
-            'val_dropout': hp.Choice('val_dropout', values=[0.01, 0.02, 0.08]),
-            'num1_lstm': hp.Choice('num1_lstm', values=[60, 72, 84, 96, 108]),
-            'num2_lstm': hp.Choice('num2_lstm', values=[60, 72, 84, 96, 108]),
+            'val_dropout': hp.Choice('val_dropout', values=[0.01]),
+            'num1_lstm': hp.Choice('num1_lstm', values=list(range(48, 205, 12))),
+            'num2_lstm': hp.Choice('num2_lstm', values=list(range(48, 205, 12))),
             'activation': hp.Choice('activation', values=['selu']),
             'activation_dense': hp.Choice('activation_dense', values=['elu'])
         }
